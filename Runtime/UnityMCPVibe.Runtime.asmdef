@@ -1,0 +1,17 @@
+{
+    "name": "UnityMCPVibe.Runtime",
+    "rootNamespace": "UnityMCPVibe.Runtime",
+    "references": [
+        "GUID:560b04d1a97f54a46a2660c3cc343a6f",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+} 

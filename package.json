@@ -1,0 +1,20 @@
+{
+  "name": "com.jlceaser.unity-mcp-vibe",
+  "version": "1.0.0",
+  "displayName": "Unity MCP Vibe",
+  "description": "Native C# MCP (Model Context Protocol) server for Unity. Zero Python dependency, maximum performance. Enables AI assistants to control Unity Editor directly.",
+  "unity": "2021.3",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.0.2"
+  },
+  "keywords": [
+    "unity",
+    "ai",
+    "mcp",
+    "native-server",
+    "vibe"
+  ],
+  "author": {
+    "name": "jlceaser"
+  }
+}

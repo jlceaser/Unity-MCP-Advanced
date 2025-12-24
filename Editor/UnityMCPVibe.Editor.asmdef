@@ -1,0 +1,21 @@
+{
+    "name": "UnityMCPVibe.Editor",
+    "rootNamespace": "UnityMCPVibe.Editor",
+    "references": [
+        "UnityMCPVibe.Runtime",
+        "GUID:560b04d1a97f54a46a2660c3cc343a6f",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI",
+        "Unity.Timeline"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
