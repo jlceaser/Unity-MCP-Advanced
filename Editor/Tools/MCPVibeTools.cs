@@ -1,3 +1,5 @@
+// UI Tools require Unity UI package
+#if UNITY_UI_AVAILABLE
 #nullable disable
 using System;
 using System.IO;
@@ -8,8 +10,11 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using TMPro; // Assuming TextMeshPro is available based on VibeUnityUI
 using MCPForUnity.Editor.Helpers;
+
+#if TMPRO_AVAILABLE
+using TMPro;
+#endif
 
 namespace MCPForUnity.Editor.Tools
 {
@@ -135,7 +140,7 @@ namespace MCPForUnity.Editor.Tools
             scaler.referenceResolution = new Vector2(width, height);
 
             EnsureEventSystem();
-            
+
             return new SuccessResponse($"Created Canvas '{name}'");
         }
 
@@ -143,13 +148,13 @@ namespace MCPForUnity.Editor.Tools
         {
             string name = @params["name"]?.ToString() ?? "Panel";
             string parent = @params["parent"]?.ToString();
-            
+
             var parentObj = FindParent(parent, true); // true = auto find canvas
             if (parentObj == null) return new ErrorResponse("No parent/Canvas found");
 
             var go = new GameObject(name);
             go.transform.SetParent(parentObj.transform, false);
-            
+
             var img = go.AddComponent<Image>();
             img.color = new Color(1, 1, 1, 0.39f);
 
@@ -176,13 +181,21 @@ namespace MCPForUnity.Editor.Tools
             var img = go.AddComponent<Image>();
             var btn = go.AddComponent<Button>();
 
-            var textGO = new GameObject("Text (TMP)");
+            var textGO = new GameObject("Text");
             textGO.transform.SetParent(go.transform, false);
+
+#if TMPRO_AVAILABLE
             var tmp = textGO.AddComponent<TextMeshProUGUI>();
             tmp.text = text;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = Color.black;
-            
+#else
+            var legacyText = textGO.AddComponent<Text>();
+            legacyText.text = text;
+            legacyText.alignment = TextAnchor.MiddleCenter;
+            legacyText.color = Color.black;
+#endif
+
             var textRect = textGO.GetComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
             textRect.anchorMax = Vector2.one;
@@ -207,10 +220,17 @@ namespace MCPForUnity.Editor.Tools
             var go = new GameObject(name);
             go.transform.SetParent(parentObj.transform, false);
 
+#if TMPRO_AVAILABLE
             var tmp = go.AddComponent<TextMeshProUGUI>();
             tmp.text = text;
             tmp.fontSize = size;
             tmp.alignment = TextAlignmentOptions.Center;
+#else
+            var legacyText = go.AddComponent<Text>();
+            legacyText.text = text;
+            legacyText.fontSize = size;
+            legacyText.alignment = TextAnchor.MiddleCenter;
+#endif
 
             return new SuccessResponse($"Created Text '{name}'");
         }
@@ -219,26 +239,26 @@ namespace MCPForUnity.Editor.Tools
         {
             string name = @params["name"]?.ToString() ?? "ScrollView";
             string parent = @params["parent"]?.ToString();
-            
+
             var parentObj = FindParent(parent, true);
             if (parentObj == null) return new ErrorResponse("No parent/Canvas found");
 
             // Minimal ScrollView creation
             var go = new GameObject(name);
             go.transform.SetParent(parentObj.transform, false);
-            
+
             go.AddComponent<Image>().color = new Color(1, 1, 1, 0.39f);
             var scroll = go.AddComponent<ScrollRect>();
-            
+
             var viewport = new GameObject("Viewport");
             viewport.transform.SetParent(go.transform, false);
             viewport.AddComponent<Image>().color = Color.clear;
             viewport.AddComponent<Mask>().showMaskGraphic = false;
-            
+
             var content = new GameObject("Content");
             content.transform.SetParent(viewport.transform, false);
             var contentRect = content.AddComponent<RectTransform>();
-            
+
             // Link refs
             scroll.viewport = viewport.GetComponent<RectTransform>();
             scroll.content = contentRect;
@@ -248,7 +268,7 @@ namespace MCPForUnity.Editor.Tools
             vRect.anchorMin = Vector2.zero;
             vRect.anchorMax = Vector2.one;
             vRect.sizeDelta = Vector2.zero;
-            
+
             go.GetComponent<RectTransform>().sizeDelta = new Vector2(200, 200);
 
             return new SuccessResponse($"Created ScrollView '{name}'");
@@ -288,3 +308,4 @@ namespace MCPForUnity.Editor.Tools
         #endregion
     }
 }
+#endif

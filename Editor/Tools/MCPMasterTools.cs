@@ -75,18 +75,34 @@ namespace MCPForUnity.Editor.Tools.Master
                         if (tracksDir == null) return new ErrorResponse("Director not found");
                         if (tracksDir.playableAsset == null) return new ErrorResponse("No timeline asset");
 
-                        var timeline = tracksDir.playableAsset as UnityEngine.Timeline.TimelineAsset;
-                        if (timeline == null) return new ErrorResponse("Not a TimelineAsset");
+                        // Timeline package may not be available
+                        var timelineType = Type.GetType("UnityEngine.Timeline.TimelineAsset, Unity.Timeline");
+                        if (timelineType == null) return new ErrorResponse("Timeline package not available");
 
-                        var tracks = timeline.GetOutputTracks().Select(t => new
+                        if (!timelineType.IsInstanceOfType(tracksDir.playableAsset))
+                            return new ErrorResponse("Not a TimelineAsset");
+
+                        // Use reflection to access timeline tracks
+                        var getOutputTracksMethod = timelineType.GetMethod("GetOutputTracks");
+                        if (getOutputTracksMethod == null) return new ErrorResponse("Cannot access timeline tracks");
+
+                        var tracksEnumerable = getOutputTracksMethod.Invoke(tracksDir.playableAsset, null) as System.Collections.IEnumerable;
+                        var tracksList = new List<object>();
+                        if (tracksEnumerable != null)
                         {
-                            name = t.name,
-                            type = t.GetType().Name,
-                            muted = t.muted,
-                            clipCount = t.GetClips().Count()
-                        }).ToList();
+                            foreach (var track in tracksEnumerable)
+                            {
+                                var trackType = track.GetType();
+                                tracksList.Add(new
+                                {
+                                    name = trackType.GetProperty("name")?.GetValue(track)?.ToString() ?? "Unknown",
+                                    type = trackType.Name,
+                                    muted = (bool)(trackType.GetProperty("muted")?.GetValue(track) ?? false)
+                                });
+                            }
+                        }
 
-                        return new SuccessResponse("Timeline tracks", new { tracks });
+                        return new SuccessResponse("Timeline tracks", new { tracks = tracksList });
 
                     case "get_bindings":
                         var bindDir = FindDirector(directorName);

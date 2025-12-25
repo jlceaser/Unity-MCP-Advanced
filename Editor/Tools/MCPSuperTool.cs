@@ -41,9 +41,7 @@ namespace MCPForUnity.Editor.Tools
             { "AudioSource", typeof(AudioSource) },
             { "Animator", typeof(Animator) },
             { "Canvas", typeof(Canvas) },
-            { "Image", typeof(UnityEngine.UI.Image) },
-            { "Text", typeof(UnityEngine.UI.Text) },
-            { "Button", typeof(UnityEngine.UI.Button) },
+            // UI types loaded dynamically to avoid dependency issues
         };
 
         public static object HandleCommand(JObject @params)

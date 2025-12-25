@@ -1,3 +1,5 @@
+// Test Framework is optional - only available when Unity Test Framework package is installed
+#if UNITY_TEST_FRAMEWORK
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -79,13 +81,6 @@ namespace MCPForUnity.Editor.Services
 
                 if (mode == TestMode.PlayMode)
                 {
-                    // PlayMode runs transition the editor into play across multiple update ticks. Unity's
-                    // built-in pipeline schedules SaveModifiedSceneTask early, but that task uses
-                    // EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo which throws once play mode is
-                    // active. To minimize that window we pre-save dirty scenes and disable domain reload (so the
-                    // MCP bridge stays alive). We do NOT force runSynchronously here because that can freeze the
-                    // editor in some projects. If the TestRunner still hits the save task after entering play, the
-                    // run can fail; in that case, rerun from a clean Edit Mode state.
                     adjustedPlayModeOptions = EnsurePlayModeRunsWithoutDomainReload(
                         out originalEnterPlayModeOptionsEnabled,
                         out originalEnterPlayModeOptions);
@@ -204,9 +199,6 @@ namespace MCPForUnity.Editor.Services
             originalEnterPlayModeOptionsEnabled = EditorSettings.enterPlayModeOptionsEnabled;
             originalEnterPlayModeOptions = EditorSettings.enterPlayModeOptions;
 
-            // When Play Mode triggers a domain reload, the MCP connection is torn down and the pending
-            // test run response never makes it back to the caller. To keep the bridge alive for this
-            // invocation, temporarily enable Enter Play Mode Options with domain reload disabled.
             bool domainReloadDisabled = (originalEnterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) != 0;
             bool needsChange = !originalEnterPlayModeOptionsEnabled || !domainReloadDisabled;
             if (!needsChange)
@@ -262,7 +254,6 @@ namespace MCPForUnity.Editor.Services
                 tcs.TrySetResult(root);
             });
 
-            // Ensure the editor pumps at least one additional update in case the window is unfocused.
             EditorApplication.QueuePlayerLoopUpdate();
 
             var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(true);
@@ -487,3 +478,4 @@ namespace MCPForUnity.Editor.Services
         }
     }
 }
+#endif

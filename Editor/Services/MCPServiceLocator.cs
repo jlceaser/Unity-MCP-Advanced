@@ -13,7 +13,9 @@ namespace MCPForUnity.Editor.Services
         private static IBridgeControlService _bridgeService;
         private static IClientConfigurationService _clientService;
         private static IPathResolverService _pathService;
+#if UNITY_TEST_FRAMEWORK
         private static ITestRunnerService _testRunnerService;
+#endif
         private static IPackageUpdateService _packageUpdateService;
         private static IPlatformService _platformService;
         private static IToolDiscoveryService _toolDiscoveryService;
@@ -24,7 +26,9 @@ namespace MCPForUnity.Editor.Services
         public static IBridgeControlService Bridge => _bridgeService ??= new BridgeControlService();
         public static IClientConfigurationService Client => _clientService ??= new ClientConfigurationService();
         public static IPathResolverService Paths => _pathService ??= new PathResolverService();
+#if UNITY_TEST_FRAMEWORK
         public static ITestRunnerService Tests => _testRunnerService ??= new TestRunnerService();
+#endif
         public static IPackageUpdateService Updates => _packageUpdateService ??= new PackageUpdateService();
         public static IPlatformService Platform => _platformService ??= new PlatformService();
         public static IToolDiscoveryService ToolDiscovery => _toolDiscoveryService ??= new ToolDiscoveryService();
@@ -45,8 +49,10 @@ namespace MCPForUnity.Editor.Services
                 _clientService = c;
             else if (implementation is IPathResolverService p)
                 _pathService = p;
+#if UNITY_TEST_FRAMEWORK
             else if (implementation is ITestRunnerService t)
                 _testRunnerService = t;
+#endif
             else if (implementation is IPackageUpdateService pu)
                 _packageUpdateService = pu;
             else if (implementation is IPlatformService ps)
@@ -69,7 +75,9 @@ namespace MCPForUnity.Editor.Services
             (_bridgeService as IDisposable)?.Dispose();
             (_clientService as IDisposable)?.Dispose();
             (_pathService as IDisposable)?.Dispose();
+#if UNITY_TEST_FRAMEWORK
             (_testRunnerService as IDisposable)?.Dispose();
+#endif
             (_packageUpdateService as IDisposable)?.Dispose();
             (_platformService as IDisposable)?.Dispose();
             (_toolDiscoveryService as IDisposable)?.Dispose();
@@ -80,7 +88,9 @@ namespace MCPForUnity.Editor.Services
             _bridgeService = null;
             _clientService = null;
             _pathService = null;
+#if UNITY_TEST_FRAMEWORK
             _testRunnerService = null;
+#endif
             _packageUpdateService = null;
             _platformService = null;
             _toolDiscoveryService = null;

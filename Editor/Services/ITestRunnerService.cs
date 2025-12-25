@@ -1,3 +1,5 @@
+// Test Framework is optional - only available when Unity Test Framework package is installed
+#if UNITY_TEST_FRAMEWORK
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEditor.TestTools.TestRunner.Api;
@@ -50,3 +52,4 @@ namespace MCPForUnity.Editor.Services
         Task<TestRunResult> RunTestsAsync(TestMode mode, TestFilterOptions filterOptions = null);
     }
 }
+#endif

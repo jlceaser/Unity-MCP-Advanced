@@ -5,11 +5,17 @@ using System.Reflection;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using MCPForUnity.Editor.Helpers;
+
+// UI and TMPro are optional
+#if UNITY_UI_AVAILABLE
+using UnityEngine.UI;
+#endif
+#if TMPRO_AVAILABLE
 using TMPro;
+#endif
 
 namespace MCPForUnity.Editor.Tools
 {
@@ -403,7 +409,8 @@ namespace MCPForUnity.Editor.Tools
     }
     #endregion
 
-    #region 4. Create UI Element Tool
+    #region 4. Create UI Element Tool (Requires UI package)
+#if UNITY_UI_AVAILABLE
     /// <summary>
     /// MCP Tool for creating UI elements with proper setup in one call.
     /// </summary>
@@ -527,10 +534,18 @@ namespace MCPForUnity.Editor.Tools
                     break;
 
                 case "text":
+#if TMPRO_AVAILABLE
                     var tmp = go.AddComponent<TextMeshProUGUI>();
                     tmp.text = text ?? "Text";
                     tmp.fontSize = 24;
                     tmp.alignment = TextAlignmentOptions.Center;
+#else
+                    // Fallback to legacy Text
+                    var legacyText = go.AddComponent<UnityEngine.UI.Text>();
+                    legacyText.text = text ?? "Text";
+                    legacyText.fontSize = 24;
+                    legacyText.alignment = TextAnchor.MiddleCenter;
+#endif
                     break;
 
                 case "button":
@@ -544,11 +559,19 @@ namespace MCPForUnity.Editor.Tools
                     btnRect.anchorMax = Vector2.one;
                     btnRect.offsetMin = Vector2.zero;
                     btnRect.offsetMax = Vector2.zero;
+#if TMPRO_AVAILABLE
                     var btnText = btnTextGO.AddComponent<TextMeshProUGUI>();
                     btnText.text = text ?? "Button";
                     btnText.fontSize = 20;
                     btnText.alignment = TextAlignmentOptions.Center;
                     btnText.color = Color.black;
+#else
+                    var btnLegacyText = btnTextGO.AddComponent<UnityEngine.UI.Text>();
+                    btnLegacyText.text = text ?? "Button";
+                    btnLegacyText.fontSize = 20;
+                    btnLegacyText.alignment = TextAnchor.MiddleCenter;
+                    btnLegacyText.color = Color.black;
+#endif
                     break;
 
                 case "slider":
@@ -565,6 +588,7 @@ namespace MCPForUnity.Editor.Tools
 
                 case "inputfield":
                     var inputImg = go.AddComponent<Image>();
+#if TMPRO_AVAILABLE
                     var input = go.AddComponent<TMP_InputField>();
                     // Create text area
                     var textAreaGO = new GameObject("Text Area");
@@ -577,6 +601,17 @@ namespace MCPForUnity.Editor.Tools
                     var inputText = textAreaGO.AddComponent<TextMeshProUGUI>();
                     inputText.fontSize = 18;
                     input.textComponent = inputText;
+#else
+                    var legacyInput = go.AddComponent<InputField>();
+                    var inputTextGO = new GameObject("Text");
+                    inputTextGO.transform.SetParent(go.transform, false);
+                    var inputTextRect = inputTextGO.AddComponent<RectTransform>();
+                    inputTextRect.anchorMin = Vector2.zero;
+                    inputTextRect.anchorMax = Vector2.one;
+                    var inputLegacyText = inputTextGO.AddComponent<UnityEngine.UI.Text>();
+                    inputLegacyText.fontSize = 18;
+                    legacyInput.textComponent = inputLegacyText;
+#endif
                     break;
 
                 default:
@@ -647,6 +682,7 @@ namespace MCPForUnity.Editor.Tools
             }
         }
     }
+#endif
     #endregion
 
     #region 5. Execute C# Tool

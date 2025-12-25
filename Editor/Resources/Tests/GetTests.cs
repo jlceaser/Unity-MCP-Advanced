@@ -1,3 +1,5 @@
+// Test Framework is optional - only available when Unity Test Framework package is installed
+#if UNITY_TEST_FRAMEWORK
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -104,3 +106,4 @@ namespace MCPForUnity.Editor.Resources.Tests
         }
     }
 }
+#endif

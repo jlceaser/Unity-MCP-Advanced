@@ -555,9 +555,10 @@ namespace MCPForUnity.Editor.Tools
                 warnings++;
             }
 
-            // Check EventSystem for UI
+            // Check EventSystem for UI (using reflection to avoid UI package dependency)
             var canvases = UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None);
-            var eventSystem = UnityEngine.Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
+            var eventSystemType = Type.GetType("UnityEngine.EventSystems.EventSystem, UnityEngine.UI");
+            var eventSystem = eventSystemType != null ? UnityEngine.Object.FindFirstObjectByType(eventSystemType) : null;
             if (canvases.Length > 0 && eventSystem == null)
             {
                 issues.Add(new { type = "warning", message = "UI Canvas exists but no EventSystem found" });

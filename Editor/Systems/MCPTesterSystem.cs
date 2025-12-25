@@ -617,21 +617,25 @@ namespace MCPForUnity.Editor.Tools
                 return;
             }
 
-            // Check for EventSystem
-            var eventSystem = UnityEngine.Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>();
-            if (eventSystem == null)
+            // Check for EventSystem (using reflection to avoid UI package dependency)
+            var eventSystemType = Type.GetType("UnityEngine.EventSystems.EventSystem, UnityEngine.UI");
+            if (eventSystemType != null)
             {
-                result.bugs.Add(new BugReport
+                var eventSystem = UnityEngine.Object.FindObjectOfType(eventSystemType);
+                if (eventSystem == null)
                 {
-                    severity = "high",
-                    category = "missing_component",
-                    message = "No EventSystem in scene - UI interactions won't work",
-                    location = "Scene"
-                });
-            }
-            else
-            {
-                result.passed.Add("EventSystem present");
+                    result.bugs.Add(new BugReport
+                    {
+                        severity = "high",
+                        category = "missing_component",
+                        message = "No EventSystem in scene - UI interactions won't work",
+                        location = "Scene"
+                    });
+                }
+                else
+                {
+                    result.passed.Add("EventSystem present");
+                }
             }
 
             // Check PlayerUI specifically
