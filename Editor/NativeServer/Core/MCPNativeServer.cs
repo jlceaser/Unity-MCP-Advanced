@@ -38,6 +38,7 @@ namespace MCPForUnity.Editor.NativeServer.Core
         private MCPHttpServer _httpServer;
         private MCPToolRegistry _toolRegistry;
         private MCPResourceRegistry _resourceRegistry;
+        private MCPHealthMonitor _healthMonitor;
         private System.Timers.Timer _backgroundTimer;
         private System.Timers.Timer _healthCheckTimer;
 
@@ -178,6 +179,7 @@ namespace MCPForUnity.Editor.NativeServer.Core
             // Create registries
             _toolRegistry = new MCPToolRegistry();
             _resourceRegistry = new MCPResourceRegistry();
+            _healthMonitor = new MCPHealthMonitor(_toolRegistry, _toolRegistry.CircuitBreaker);
 
             // Wire up events
             _toolRegistry.OnToolExecuted += (name, ms) =>
@@ -704,8 +706,16 @@ For more info, read resource: unity://mcp-help
                     "initialized" => JsonRpcResponse.Success(request.Id, new { }),
                     "tools/list" => HandleToolsList(request),
                     "tools/call" => await HandleToolsCall(request),
+                    "tools/batch" => await HandleToolsBatch(request),
                     "resources/list" => HandleResourcesList(request),
                     "resources/read" => await HandleResourcesRead(request),
+                    "cache/stats" => HandleCacheStats(request),
+                    "cache/clear" => HandleCacheClear(request),
+                    "health" => HandleHealth(request),
+                    "health/quick" => HandleHealthQuick(request),
+                    "circuit/stats" => HandleCircuitStats(request),
+                    "circuit/reset" => HandleCircuitReset(request),
+                    "queue/stats" => HandleQueueStats(request),
                     "ping" => JsonRpcResponse.Success(request.Id, new { response = "pong", server = SERVER_NAME }),
                     "shutdown" => HandleShutdown(request),
                     _ => await HandleDirectToolCall(request, method)
@@ -787,6 +797,105 @@ For more info, read resource: unity://mcp-help
             var arguments = paramsToken["arguments"] as JObject ?? new JObject();
             var result = await _toolRegistry.ExecuteTool(toolName, arguments);
             return JsonRpcResponse.Success(request.Id, result);
+        }
+
+        private async Task<JsonRpcResponse> HandleToolsBatch(JsonRpcRequest request)
+        {
+            var paramsToken = request.Params;
+            if (paramsToken == null || paramsToken.Type == JTokenType.Null)
+            {
+                return JsonRpcResponse.Failure(request.Id, JsonRpcError.InvalidParams, "Missing batch parameters");
+            }
+
+            var requestsToken = paramsToken["requests"] as JArray;
+            if (requestsToken == null || requestsToken.Count == 0)
+            {
+                return JsonRpcResponse.Failure(request.Id, JsonRpcError.InvalidParams, "Missing or empty requests array");
+            }
+
+            bool parallel = paramsToken["parallel"]?.Value<bool>() ?? true;
+
+            var batchRequests = new List<MCPToolRegistry.BatchRequest>();
+            foreach (var reqToken in requestsToken)
+            {
+                batchRequests.Add(new MCPToolRegistry.BatchRequest
+                {
+                    Name = reqToken["name"]?.Value<string>(),
+                    Arguments = reqToken["arguments"] as JObject ?? new JObject(),
+                    Id = reqToken["id"]?.Value<string>()
+                });
+            }
+
+            var responses = await _toolRegistry.ExecuteBatch(batchRequests, parallel);
+
+            return JsonRpcResponse.Success(request.Id, new
+            {
+                responses = responses,
+                total = responses.Count,
+                parallel = parallel
+            });
+        }
+
+        private JsonRpcResponse HandleCacheStats(JsonRpcRequest request)
+        {
+            var stats = _toolRegistry.ResponseCache.GetStats();
+            return JsonRpcResponse.Success(request.Id, stats);
+        }
+
+        private JsonRpcResponse HandleCacheClear(JsonRpcRequest request)
+        {
+            var pattern = request.Params?["pattern"]?.Value<string>();
+            if (!string.IsNullOrEmpty(pattern))
+            {
+                _toolRegistry.ResponseCache.InvalidatePattern(pattern);
+            }
+            else
+            {
+                _toolRegistry.ResponseCache.ClearAll();
+            }
+            return JsonRpcResponse.Success(request.Id, new { cleared = true });
+        }
+
+        private JsonRpcResponse HandleHealth(JsonRpcRequest request)
+        {
+            var report = _healthMonitor.GetHealthReport();
+            return JsonRpcResponse.Success(request.Id, report);
+        }
+
+        private JsonRpcResponse HandleHealthQuick(JsonRpcRequest request)
+        {
+            var status = _healthMonitor.GetQuickStatus();
+            return JsonRpcResponse.Success(request.Id, new
+            {
+                status = status.ToString(),
+                healthy = status == HealthStatus.Healthy
+            });
+        }
+
+        private JsonRpcResponse HandleCircuitStats(JsonRpcRequest request)
+        {
+            var stats = _toolRegistry.CircuitBreaker.GetStats();
+            return JsonRpcResponse.Success(request.Id, stats);
+        }
+
+        private JsonRpcResponse HandleCircuitReset(JsonRpcRequest request)
+        {
+            var toolName = request.Params?["tool"]?.Value<string>();
+            if (!string.IsNullOrEmpty(toolName))
+            {
+                _toolRegistry.CircuitBreaker.ResetCircuit(toolName);
+            }
+            else
+            {
+                _toolRegistry.CircuitBreaker.ResetAll();
+            }
+            return JsonRpcResponse.Success(request.Id, new { reset = true });
+        }
+
+        private JsonRpcResponse HandleQueueStats(JsonRpcRequest request)
+        {
+            var stats = MCPToolRegistry.GetQueueStats();
+            return JsonRpcResponse.Success(request.Id, stats);
         }
 
         private JsonRpcResponse HandleResourcesList(JsonRpcRequest request)

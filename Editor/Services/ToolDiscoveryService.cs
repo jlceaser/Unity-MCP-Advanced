@@ -5,8 +5,10 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using MCPForUnity.Editor.Constants;
 using MCPForUnity.Editor.Helpers;
+using MCPForUnity.Editor.NativeServer.Core;
 using MCPForUnity.Editor.Tools;
 using UnityEditor;
+using UnityEngine;
 
 namespace MCPForUnity.Editor.Services
 {
@@ -40,7 +42,119 @@ namespace MCPForUnity.Editor.Services
 
             _cachedTools = new Dictionary<string, ToolMetadata>();
 
-            // Scan all assemblies for [McpForUnityTool] attributes
+            // Try to load from build-time metadata cache first (fast path)
+            if (TryLoadFromMetadataCache())
+            {
+                McpLog.Info($"Loaded {_cachedTools.Count} MCP tools from metadata cache");
+                return _cachedTools.Values.ToList();
+            }
+
+            // Fallback: Scan all assemblies for [McpForUnityTool] attributes
+            DiscoverToolsViaReflection();
+
+            McpLog.Info($"Discovered {_cachedTools.Count} MCP tools via reflection");
+            return _cachedTools.Values.ToList();
+        }
+
+        /// <summary>
+        /// Try to load tool metadata from the build-time cache.
+        /// Returns true if cache was valid and loaded successfully.
+        /// </summary>
+        private bool TryLoadFromMetadataCache()
+        {
+            try
+            {
+                // Load the cache from Resources
+                var cache = Resources.Load<MCPToolMetadataCache>("MCPToolMetadataCache");
+                if (cache == null)
+                {
+                    return false;
+                }
+
+                // Validate cache
+                if (cache.UnityVersion != Application.unityVersion)
+                {
+                    McpLog.Info($"Metadata cache Unity version mismatch: {cache.UnityVersion} vs {Application.unityVersion}");
+                    return false;
+                }
+
+                if (cache.Tools == null || cache.Tools.Count == 0)
+                {
+                    return false;
+                }
+
+                // Convert cached entries to ToolMetadata
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                foreach (var entry in cache.Tools)
+                {
+                    var metadata = ConvertCachedEntryToMetadata(entry);
+                    if (metadata != null)
+                    {
+                        _cachedTools[metadata.Name] = metadata;
+                        EnsurePreferenceInitialized(metadata);
+                    }
+                }
+                sw.Stop();
+
+                McpLog.Info($"Loaded {_cachedTools.Count} tools from cache in {sw.ElapsedMilliseconds}ms");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                McpLog.Warn($"Failed to load metadata cache: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Convert a cached tool entry to runtime ToolMetadata
+        /// </summary>
+        private ToolMetadata ConvertCachedEntryToMetadata(MCPToolMetadataCache.CachedToolEntry entry)
+        {
+            if (entry == null || string.IsNullOrEmpty(entry.Name))
+            {
+                return null;
+            }
+
+            var parameters = new List<ParameterMetadata>();
+            if (entry.Parameters != null)
+            {
+                foreach (var param in entry.Parameters)
+                {
+                    parameters.Add(new ParameterMetadata
+                    {
+                        Name = param.Name,
+                        Description = param.Description,
+                        Type = param.Type,
+                        Required = param.Required,
+                        DefaultValue = param.DefaultValue
+                    });
+                }
+            }
+
+            var metadata = new ToolMetadata
+            {
+                Name = entry.Name,
+                Description = entry.Description,
+                ClassName = entry.ClassName,
+                Namespace = entry.Namespace,
+                AssemblyName = entry.AssemblyName,
+                AutoRegister = entry.AutoRegister,
+                RequiresPolling = entry.RequiresPolling,
+                PollAction = entry.PollAction ?? "status",
+                StructuredOutput = entry.StructuredOutput,
+                Parameters = parameters,
+                IsBuiltIn = entry.AssemblyName == "MCPForUnity.Editor"
+            };
+
+            return metadata;
+        }
+
+        /// <summary>
+        /// Discover tools via reflection (fallback when cache is not available)
+        /// </summary>
+        private void DiscoverToolsViaReflection()
+        {
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
             foreach (var assembly in assemblies)
@@ -69,9 +183,6 @@ namespace MCPForUnity.Editor.Services
                     McpLog.Info($"Skipping assembly {assembly.FullName}: {ex.Message}");
                 }
             }
-
-            McpLog.Info($"Discovered {_cachedTools.Count} MCP tools via reflection");
-            return _cachedTools.Values.ToList();
         }
 
         public ToolMetadata GetToolMetadata(string toolName)

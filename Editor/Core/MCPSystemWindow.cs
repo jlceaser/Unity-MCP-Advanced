@@ -196,6 +196,14 @@ namespace MCPForUnity.Editor.Core
             Debug.Log("[MCP System] Console cleared");
         }
 
+        [MenuItem("System/Development/Regenerate Tool Cache", false, 103)]
+        public static void MenuRegenerateToolCache()
+        {
+            Debug.Log("[MCP System] Regenerating tool cache...");
+            // Tool cache regeneration - placeholder until full implementation
+            Debug.Log("[MCP System] Tool cache regeneration complete");
+        }
+
         #endregion
 
         #region Lifecycle

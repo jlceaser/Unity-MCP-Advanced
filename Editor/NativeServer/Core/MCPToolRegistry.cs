@@ -45,18 +45,25 @@ namespace MCPForUnity.Editor.NativeServer.Core
     public class MCPToolRegistry
     {
         private readonly ConcurrentDictionary<string, MCPToolRegistration> _tools;
+        private readonly MCPResponseCache _responseCache;
+        private readonly MCPCircuitBreaker _circuitBreaker;
         private readonly object _lock = new object();
 
         public int ToolCount => _tools.Count;
         public IEnumerable<string> ToolNames => _tools.Keys;
+        public MCPResponseCache ResponseCache => _responseCache;
+        public MCPCircuitBreaker CircuitBreaker => _circuitBreaker;
 
         public event Action<string> OnToolRegistered;
         public event Action<string, double> OnToolExecuted;
         public event Action<string, Exception> OnToolError;
+        public event Action<string> OnCacheHit;
 
         public MCPToolRegistry()
         {
             _tools = new ConcurrentDictionary<string, MCPToolRegistration>(StringComparer.OrdinalIgnoreCase);
+            _responseCache = new MCPResponseCache();
+            _circuitBreaker = new MCPCircuitBreaker();
         }
 
         #region Registration
@@ -249,6 +256,28 @@ namespace MCPForUnity.Editor.NativeServer.Core
                 };
             }
 
+            // Check circuit breaker - prevent execution if circuit is open
+            if (!_circuitBreaker.AllowRequest(name))
+            {
+                var circuitState = _circuitBreaker.GetState(name);
+                return new MCPToolResult
+                {
+                    IsError = true,
+                    Content = new List<MCPContent>
+                    {
+                        MCPContent.TextContent($"Tool '{name}' is temporarily unavailable (circuit {circuitState}). Please try again later.")
+                    }
+                };
+            }
+
+            // Check response cache first (for read-only tools)
+            if (_responseCache.TryGetCachedResponse(name, arguments, out var cachedResult, out _))
+            {
+                OnCacheHit?.Invoke(name);
+                _circuitBreaker.RecordSuccess(name); // Cache hits count as success
+                return cachedResult;
+            }
+
             var startTime = DateTime.UtcNow;
 
             try
@@ -269,11 +298,25 @@ namespace MCPForUnity.Editor.NativeServer.Core
                 registration.CallCount++;
                 registration.TotalExecutionTime += (DateTime.UtcNow - startTime).TotalMilliseconds;
 
+                // Cache the response (only for successful read-only tools)
+                _responseCache.CacheResponse(name, arguments, result);
+
+                // Record success for circuit breaker
+                if (!result.IsError)
+                {
+                    _circuitBreaker.RecordSuccess(name);
+                }
+                else
+                {
+                    _circuitBreaker.RecordFailure(name, "Tool returned error");
+                }
+
                 OnToolExecuted?.Invoke(name, (DateTime.UtcNow - startTime).TotalMilliseconds);
                 return result;
             }
             catch (Exception ex)
             {
+                _circuitBreaker.RecordFailure(name, ex.Message);
                 OnToolError?.Invoke(name, ex);
 
                 return new MCPToolResult
@@ -287,18 +330,23 @@ namespace MCPForUnity.Editor.NativeServer.Core
             }
         }
 
-        // Queue for main thread execution
-        private static readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
+        // Priority queue for main thread execution
+        private static readonly MCPPriorityQueue _mainThreadQueue = new MCPPriorityQueue();
         private static bool _updateRegistered = false;
 
-        private Task<MCPToolResult> ExecuteOnMainThread(MCPToolHandler handler, JObject arguments)
+        /// <summary>
+        /// Get priority queue statistics
+        /// </summary>
+        public static Dictionary<string, object> GetQueueStats() => _mainThreadQueue.GetStats();
+
+        private Task<MCPToolResult> ExecuteOnMainThread(MCPToolHandler handler, JObject arguments, MCPPriority priority = MCPPriority.Normal, string toolName = null)
         {
             var tcs = new TaskCompletionSource<MCPToolResult>();
 
             // Ensure update callback is registered
             EnsureUpdateRegistered();
 
-            // Queue the work
+            // Queue the work with priority
             _mainThreadQueue.Enqueue(() =>
             {
                 try
@@ -316,7 +364,7 @@ namespace MCPForUnity.Editor.NativeServer.Core
                 {
                     tcs.SetException(ex);
                 }
-            });
+            }, priority, toolName);
 
             return tcs.Task;
         }
@@ -349,23 +397,122 @@ namespace MCPForUnity.Editor.NativeServer.Core
         }
 
         private const int MaxItemsPerFrame = 50; // Increased from 10 for better throughput
+        private const int MaxHighPriorityPerFrame = 100; // Process more high-priority items
 
         private static void ProcessMainThreadQueue()
         {
-            // Process queued actions with configurable limit
             int processed = 0;
-            while (_mainThreadQueue.TryDequeue(out var action) && processed < MaxItemsPerFrame)
+
+            // First, process ALL high-priority items (up to limit)
+            while (_mainThreadQueue.HasHighPriority && processed < MaxHighPriorityPerFrame)
             {
+                if (_mainThreadQueue.TryDequeue(MCPPriority.High, out var highItem))
+                {
+                    try
+                    {
+                        highItem.Action?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[MCPToolRegistry] Main thread execution error (High): {ex.Message}");
+                    }
+                    processed++;
+                }
+                else break;
+            }
+
+            // Then process other priorities up to the normal limit
+            while (processed < MaxItemsPerFrame)
+            {
+                var item = _mainThreadQueue.Dequeue();
+                if (item == null) break;
+
                 try
                 {
-                    action?.Invoke();
+                    item.Action?.Invoke();
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[MCPToolRegistry] Main thread execution error: {ex.Message}");
+                    Debug.LogError($"[MCPToolRegistry] Main thread execution error ({item.Priority}): {ex.Message}");
                 }
                 processed++;
             }
+        }
+
+        #endregion
+
+        #region Batch Execution
+
+        /// <summary>
+        /// Batch request structure
+        /// </summary>
+        public class BatchRequest
+        {
+            public string Name { get; set; }
+            public JObject Arguments { get; set; }
+            public string Id { get; set; }
+        }
+
+        /// <summary>
+        /// Batch response structure
+        /// </summary>
+        public class BatchResponse
+        {
+            public string Id { get; set; }
+            public MCPToolResult Result { get; set; }
+            public double ExecutionTimeMs { get; set; }
+        }
+
+        /// <summary>
+        /// Execute multiple tools in a batch
+        /// </summary>
+        public async Task<List<BatchResponse>> ExecuteBatch(List<BatchRequest> requests, bool parallel = true)
+        {
+            if (requests == null || requests.Count == 0)
+            {
+                return new List<BatchResponse>();
+            }
+
+            var responses = new List<BatchResponse>();
+
+            if (parallel)
+            {
+                // Execute tools in parallel (where possible)
+                var tasks = new List<Task<BatchResponse>>();
+
+                foreach (var request in requests)
+                {
+                    tasks.Add(ExecuteSingleBatchRequest(request));
+                }
+
+                var results = await Task.WhenAll(tasks);
+                responses.AddRange(results);
+            }
+            else
+            {
+                // Execute tools sequentially
+                foreach (var request in requests)
+                {
+                    var response = await ExecuteSingleBatchRequest(request);
+                    responses.Add(response);
+                }
+            }
+
+            return responses;
+        }
+
+        private async Task<BatchResponse> ExecuteSingleBatchRequest(BatchRequest request)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await ExecuteTool(request.Name, request.Arguments ?? new JObject());
+            sw.Stop();
+
+            return new BatchResponse
+            {
+                Id = request.Id ?? request.Name,
+                Result = result,
+                ExecutionTimeMs = sw.Elapsed.TotalMilliseconds
+            };
         }
 
         #endregion
@@ -479,21 +626,21 @@ namespace MCPForUnity.Editor.NativeServer.Core
                 };
             }
 
-            // SLOW PATH: Fallback to reflection for unknown types
-            var resultType = result.GetType();
-            var successProp = resultType.GetProperty("success") ?? resultType.GetProperty("Success");
-            var errorProp = resultType.GetProperty("error") ?? resultType.GetProperty("Error");
-
+            // SLOW PATH: Use cached property accessors (Expression tree compiled delegates)
             bool isError = false;
-            if (successProp != null)
+
+            // Check "success" property using cached accessor
+            var (successFound, successValue) = CachedPropertyAccessor.TryGetBoolProperty(result, "success");
+            if (successFound)
             {
-                var success = successProp.GetValue(result);
-                isError = success is bool b && !b;
+                isError = !successValue;
             }
-            if (errorProp != null)
+
+            // Check "error" property using cached accessor
+            var (errorFound, errorValue) = CachedPropertyAccessor.TryGetStringProperty(result, "error");
+            if (errorFound && !string.IsNullOrEmpty(errorValue))
             {
-                var error = errorProp.GetValue(result);
-                isError = error != null && !string.IsNullOrEmpty(error.ToString());
+                isError = true;
             }
 
             return new MCPToolResult
